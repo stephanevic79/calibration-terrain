@@ -23,7 +23,7 @@
         <label for="milieu">Milieu :</label>
         <select id="milieu">
             <option value="riviere">Rivière</option>
-            <option value="lac">Lac</option>
+            <option value="plan_eau">Plan d'eau</option>
         </select>
         <button id="estimer">📊 Estimer la température de l'eau</button>
         <p id="t-estimee"></p>
@@ -32,6 +32,7 @@
     <section id="mesure">
         <h2>🧪 Mesure réelle</h2>
         <input type="number" id="t-mesuree" placeholder="Température mesurée (°C)" step="0.1">
+        <input type="number" id="profondeur" placeholder="Profondeur (m)" step="0.1" min="0">
         <button id="enregistrer">💾 Enregistrer</button>
         <p id="message"></p>
     </section>
