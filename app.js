@@ -20,27 +20,52 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('export-csv').addEventListener('click', exporterCSV);
 });
 
-// === Géolocalisation ===
+// === Géolocalisation améliorée avec demande explicite ===
 function getPosition() {
-    document.getElementById('coords').textContent = 'Acquisition GPS...';
+    const coordsEl = document.getElementById('coords');
+    coordsEl.textContent = 'Acquisition GPS...';
+
     if (!navigator.geolocation) {
-        document.getElementById('coords').textContent = 'Géolocalisation non supportée';
+        coordsEl.textContent = 'Géolocalisation non supportée par ce navigateur';
         return;
     }
-    navigator.geolocation.getCurrentPosition(async pos => {
-        currentLat = pos.coords.latitude;
-        currentLon = pos.coords.longitude;
-        document.getElementById('coords').textContent =
-            `Lat : ${currentLat.toFixed(5)}, Lon : ${currentLon.toFixed(5)}`;
-        try {
-            const commune = await reverseGeocode(currentLat, currentLon);
-            document.getElementById('commune').textContent = `Commune : ${commune}`;
-        } catch (e) {
-            document.getElementById('commune').textContent = 'Commune introuvable';
-        }
-    }, err => {
-        document.getElementById('coords').textContent = 'Erreur GPS : ' + err.message;
-    });
+
+    // Options pour forcer une position fraîche
+    const options = {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0          // pas de cache
+    };
+
+    navigator.geolocation.getCurrentPosition(
+        async pos => {
+            currentLat = pos.coords.latitude;
+            currentLon = pos.coords.longitude;
+            coordsEl.textContent = `Lat : ${currentLat.toFixed(5)}, Lon : ${currentLon.toFixed(5)}`;
+            try {
+                const commune = await reverseGeocode(currentLat, currentLon);
+                document.getElementById('commune').textContent = `Commune : ${commune}`;
+            } catch (e) {
+                document.getElementById('commune').textContent = 'Commune introuvable';
+            }
+        },
+        err => {
+            switch (err.code) {
+                case err.PERMISSION_DENIED:
+                    coordsEl.textContent = 'Autorisation GPS refusée. Veuillez l\'activer dans les paramètres.';
+                    break;
+                case err.POSITION_UNAVAILABLE:
+                    coordsEl.textContent = 'Position indisponible. Vérifiez que le GPS est activé.';
+                    break;
+                case err.TIMEOUT:
+                    coordsEl.textContent = 'Délai de géolocalisation dépassé. Réessayez.';
+                    break;
+                default:
+                    coordsEl.textContent = 'Erreur GPS : ' + err.message;
+            }
+        },
+        options
+    );
 }
 
 // === Reverse geocoding (Nominatim) ===
@@ -141,7 +166,7 @@ function enregistrerMesure() {
         return;
     }
     if (currentTEauEstimee === null) {
-        document.getElementById('message').textContent = 'Veuillez d'abord estimer la température';
+        document.getElementById('message').textContent = 'Veuillez d\'abord estimer la température';
         return;
     }
     if (!currentLat || !currentLon) {
