@@ -20,52 +20,27 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('export-csv').addEventListener('click', exporterCSV);
 });
 
-// === Géolocalisation améliorée avec demande explicite ===
+// === Géolocalisation ===
 function getPosition() {
     const coordsEl = document.getElementById('coords');
     coordsEl.textContent = 'Acquisition GPS...';
-
     if (!navigator.geolocation) {
-        coordsEl.textContent = 'Géolocalisation non supportée par ce navigateur';
+        coordsEl.textContent = 'Géolocalisation non supportée';
         return;
     }
-
-    // Options pour forcer une position fraîche
-    const options = {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0          // pas de cache
-    };
-
-    navigator.geolocation.getCurrentPosition(
-        async pos => {
-            currentLat = pos.coords.latitude;
-            currentLon = pos.coords.longitude;
-            coordsEl.textContent = `Lat : ${currentLat.toFixed(5)}, Lon : ${currentLon.toFixed(5)}`;
-            try {
-                const commune = await reverseGeocode(currentLat, currentLon);
-                document.getElementById('commune').textContent = `Commune : ${commune}`;
-            } catch (e) {
-                document.getElementById('commune').textContent = 'Commune introuvable';
-            }
-        },
-        err => {
-            switch (err.code) {
-                case err.PERMISSION_DENIED:
-                    coordsEl.textContent = 'Autorisation GPS refusée. Veuillez l\'activer dans les paramètres.';
-                    break;
-                case err.POSITION_UNAVAILABLE:
-                    coordsEl.textContent = 'Position indisponible. Vérifiez que le GPS est activé.';
-                    break;
-                case err.TIMEOUT:
-                    coordsEl.textContent = 'Délai de géolocalisation dépassé. Réessayez.';
-                    break;
-                default:
-                    coordsEl.textContent = 'Erreur GPS : ' + err.message;
-            }
-        },
-        options
-    );
+    navigator.geolocation.getCurrentPosition(async pos => {
+        currentLat = pos.coords.latitude;
+        currentLon = pos.coords.longitude;
+        coordsEl.textContent = `Lat : ${currentLat.toFixed(5)}, Lon : ${currentLon.toFixed(5)}`;
+        try {
+            const commune = await reverseGeocode(currentLat, currentLon);
+            document.getElementById('commune').textContent = `Commune : ${commune}`;
+        } catch (e) {
+            document.getElementById('commune').textContent = 'Commune introuvable';
+        }
+    }, err => {
+        coordsEl.textContent = 'Erreur GPS : ' + err.message;
+    });
 }
 
 // === Reverse geocoding (Nominatim) ===
@@ -103,7 +78,7 @@ async function fetchMeteoJour(lat, lon, dateStr) {
     return json.daily;
 }
 
-// === Estimation température de l'eau (rivière) ===
+// === Estimation température de l'eau ===
 function estimerTemperatureRiviere(dates, tAir, wind) {
     const n = dates.length;
     if (n < 7) return tAir[n-1] || 15;
@@ -117,8 +92,7 @@ function estimerTemperatureRiviere(dates, tAir, wind) {
     return tEau[n-1];
 }
 
-// === Estimation température lac (simplifié : moyenne 30 jours) ===
-function estimerTemperatureLac(tAir) {
+function estimerTemperaturePlanEau(tAir) {
     if (tAir.length === 0) return 15;
     return tAir.reduce((a,b)=>a+b,0) / tAir.length;
 }
@@ -148,7 +122,7 @@ async function estimerTemperature() {
         if (milieu === 'riviere') {
             tEau = estimerTemperatureRiviere(archive.time, archive.temperature_2m_mean, archive.wind_speed_10m_max);
         } else {
-            tEau = estimerTemperatureLac(archive.temperature_2m_mean);
+            tEau = estimerTemperaturePlanEau(archive.temperature_2m_mean);
         }
         currentTEauEstimee = tEau;
         document.getElementById('t-estimee').textContent = `Température estimée : ${tEau.toFixed(1)} °C`;
@@ -161,8 +135,13 @@ async function estimerTemperature() {
 // === Enregistrement mesure ===
 function enregistrerMesure() {
     const tMesuree = parseFloat(document.getElementById('t-mesuree').value);
+    const profondeur = parseFloat(document.getElementById('profondeur').value);
     if (isNaN(tMesuree)) {
         document.getElementById('message').textContent = 'Veuillez entrer une température mesurée';
+        return;
+    }
+    if (isNaN(profondeur)) {
+        document.getElementById('message').textContent = 'Veuillez entrer la profondeur';
         return;
     }
     if (currentTEauEstimee === null) {
@@ -179,13 +158,15 @@ function enregistrerMesure() {
         lon: currentLon,
         milieu: document.getElementById('milieu').value,
         tEstimee: currentTEauEstimee,
-        tMesuree: tMesuree
+        tMesuree: tMesuree,
+        profondeur: profondeur
     };
     const mesures = JSON.parse(localStorage.getItem('mesures') || '[]');
     mesures.push(mesure);
     localStorage.setItem('mesures', JSON.stringify(mesures));
     document.getElementById('message').textContent = '✅ Mesure enregistrée';
     document.getElementById('t-mesuree').value = '';
+    document.getElementById('profondeur').value = '';
     afficherHistorique();
 }
 
@@ -199,7 +180,7 @@ function afficherHistorique() {
         const date = new Date(m.date).toLocaleString('fr-FR');
         const indexReel = mesures.length - 1 - i;
         li.innerHTML = `
-            ${date} - ${m.milieu} : ${m.tEstimee.toFixed(1)}°C → ${m.tMesuree.toFixed(1)}°C 
+            ${date} - ${m.milieu} (${m.profondeur}m) : ${m.tEstimee.toFixed(1)}°C → ${m.tMesuree.toFixed(1)}°C 
             (écart ${(m.tMesuree - m.tEstimee).toFixed(1)}°C)
             <button class="btn-suppr" data-index="${indexReel}" title="Supprimer">❌</button>
         `;
@@ -229,9 +210,9 @@ function exporterCSV() {
         alert('Aucune mesure à exporter');
         return;
     }
-    let csv = 'date,latitude,longitude,milieu,t_estimee,t_mesuree\n';
+    let csv = 'date,latitude,longitude,milieu,profondeur_m,t_estimee,t_mesuree\n';
     mesures.forEach(m => {
-        csv += `${m.date},${m.lat},${m.lon},${m.milieu},${m.tEstimee.toFixed(2)},${m.tMesuree.toFixed(2)}\n`;
+        csv += `${m.date},${m.lat},${m.lon},${m.milieu},${m.profondeur.toFixed(2)},${m.tEstimee.toFixed(2)},${m.tMesuree.toFixed(2)}\n`;
     });
     const blob = new Blob([csv], {type: 'text/csv'});
     const url = URL.createObjectURL(blob);
