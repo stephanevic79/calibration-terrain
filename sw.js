@@ -1,4 +1,4 @@
-const CACHE_NAME = 'calib-eau-v1';
+const CACHE_NAME = 'calib-eau-v2';
 const urlsToCache = [
     '.',
     'index.html',
