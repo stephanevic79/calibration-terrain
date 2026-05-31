@@ -1,4 +1,4 @@
-const CACHE_NAME = 'calib-eau-v2';
+const CACHE_NAME = 'calib-eau-v3';   // incrémenté pour forcer la mise à jour
 const urlsToCache = [
     '.',
     'index.html',
