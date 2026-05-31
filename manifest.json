@@ -1,0 +1,15 @@
+{
+    "name": "Calibration température eau",
+    "short_name": "CalibEau",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#f0f8ff",
+    "theme_color": "#006994",
+    "icons": [
+        {
+            "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌡️</text></svg>",
+            "sizes": "100x100",
+            "type": "image/svg+xml"
+        }
+    ]
+}

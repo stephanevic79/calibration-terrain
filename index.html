@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calibration température eau</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#006994">
+</head>
+<body>
+    <h1>🌡️ Calibration température eau</h1>
+
+    <section id="position">
+        <h2>📍 Position</h2>
+        <p id="coords">Acquisition GPS...</p>
+        <p id="commune"></p>
+        <button id="refresh-gps">🔄 Actualiser GPS</button>
+    </section>
+
+    <section id="estimation">
+        <h2>🌊 Estimation</h2>
+        <label for="milieu">Milieu :</label>
+        <select id="milieu">
+            <option value="riviere">Rivière</option>
+            <option value="lac">Lac</option>
+        </select>
+        <button id="estimer">📊 Estimer la température de l'eau</button>
+        <p id="t-estimee"></p>
+    </section>
+
+    <section id="mesure">
+        <h2>🧪 Mesure réelle</h2>
+        <input type="number" id="t-mesuree" placeholder="Température mesurée (°C)" step="0.1">
+        <button id="enregistrer">💾 Enregistrer</button>
+        <p id="message"></p>
+    </section>
+
+    <section id="historique">
+        <h2>📋 Historique (local)</h2>
+        <ul id="liste-mesures"></ul>
+        <button id="export-csv">📤 Exporter CSV</button>
+    </section>
+
+    <script src="app.js"></script>
+</body>
+</html>
