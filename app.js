@@ -19,10 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('estimer').addEventListener('click', estimerTemperature);
     document.getElementById('enregistrer').addEventListener('click', enregistrerMesure);
     document.getElementById('export-csv').addEventListener('click', exporterCSV);
-    document.getElementById('strate').addEventListener('change', function() {
-        const choixProfondeur = document.getElementById('choix-profondeur');
-        choixProfondeur.style.display = this.value === 'profondeur' ? 'block' : 'none';
-    });
 });
 
 // === Géolocalisation ===
@@ -160,9 +156,10 @@ async function estimerTemperature() {
 
 // === Enregistrement mesure ===
 function enregistrerMesure() {
-    const tMesuree = parseFloat(document.getElementById('t-mesuree').value);
-    if (isNaN(tMesuree)) {
-        document.getElementById('message').textContent = 'Veuillez entrer une température mesurée';
+    const tSurface = parseFloat(document.getElementById('t-mesuree-surface').value);
+    const tProfondeur = parseFloat(document.getElementById('t-mesuree-profondeur').value);
+    if (isNaN(tSurface) || isNaN(tProfondeur)) {
+        document.getElementById('message').textContent = 'Veuillez entrer les deux températures mesurées';
         return;
     }
     if (currentTEauComplet === null) {
@@ -174,29 +171,26 @@ function enregistrerMesure() {
         return;
     }
 
-    const strate = document.getElementById('strate').value;
-    let profondeur = 0.3; // surface par défaut
-    if (strate === 'profondeur') {
-        profondeur = parseFloat(document.getElementById('profondeur-max').value);
-    }
+    const profondeurMax = parseFloat(document.getElementById('profondeur-max').value);
 
     const mesure = {
         date: new Date().toISOString(),
         lat: currentLat,
         lon: currentLon,
         milieu: document.getElementById('milieu').value,
-        strate: strate,
-        profondeur: profondeur,
+        profondeurMax: profondeurMax,
         tEstimeeComplet: currentTEauComplet,
         tEstimeeSimple: currentTEauSimple,
-        tMesuree: tMesuree
+        tMesureeSurface: tSurface,
+        tMesureeProfondeur: tProfondeur
     };
 
     const mesures = JSON.parse(localStorage.getItem('mesures') || '[]');
     mesures.push(mesure);
     localStorage.setItem('mesures', JSON.stringify(mesures));
-    document.getElementById('message').textContent = '✅ Mesure enregistrée';
-    document.getElementById('t-mesuree').value = '';
+    document.getElementById('message').textContent = '✅ Mesures enregistrées';
+    document.getElementById('t-mesuree-surface').value = '';
+    document.getElementById('t-mesuree-profondeur').value = '';
     afficherHistorique();
 }
 
@@ -209,12 +203,14 @@ function afficherHistorique() {
         const li = document.createElement('li');
         const date = new Date(m.date).toLocaleString('fr-FR');
         const indexReel = mesures.length - 1 - i;
-        const ecartComplet = (m.tMesuree - m.tEstimeeComplet).toFixed(1);
-        const ecartSimple = (m.tMesuree - m.tEstimeeSimple).toFixed(1);
+        const ecartSurfComplet = (m.tMesureeSurface - m.tEstimeeComplet).toFixed(1);
+        const ecartProfComplet = (m.tMesureeProfondeur - m.tEstimeeComplet).toFixed(1);
+        const ecartSurfSimple = (m.tMesureeSurface - m.tEstimeeSimple).toFixed(1);
+        const ecartProfSimple = (m.tMesureeProfondeur - m.tEstimeeSimple).toFixed(1);
         li.innerHTML = `
-            ${date} - ${m.milieu} (${m.strate}, ${m.profondeur}m)<br>
-            Complet : ${m.tEstimeeComplet.toFixed(1)}°C → ${m.tMesuree.toFixed(1)}°C (écart ${ecartComplet}°C)<br>
-            Simplifié : ${m.tEstimeeSimple.toFixed(1)}°C → ${m.tMesuree.toFixed(1)}°C (écart ${ecartSimple}°C)
+            ${date} - ${m.milieu} | Prof. max: ${m.profondeurMax}m<br>
+            🌡️ Complet : Surf ${m.tMesureeSurface.toFixed(1)}°C (écart ${ecartSurfComplet}°C) | Prof ${m.tMesureeProfondeur.toFixed(1)}°C (écart ${ecartProfComplet}°C)<br>
+            📉 Simplifié : Surf ${m.tMesureeSurface.toFixed(1)}°C (écart ${ecartSurfSimple}°C) | Prof ${m.tMesureeProfondeur.toFixed(1)}°C (écart ${ecartProfSimple}°C)
             <button class="btn-suppr" data-index="${indexReel}" title="Supprimer">❌</button>
         `;
         liste.appendChild(li);
@@ -243,9 +239,9 @@ function exporterCSV() {
         alert('Aucune mesure à exporter');
         return;
     }
-    let csv = 'date,latitude,longitude,milieu,strate,profondeur_m,t_estimee_complet,t_estimee_simple,t_mesuree\n';
+    let csv = 'date,latitude,longitude,milieu,profondeur_max_m,t_estimee_complet,t_estimee_simple,t_mesuree_surface,t_mesuree_profondeur\n';
     mesures.forEach(m => {
-        csv += `${m.date},${m.lat},${m.lon},${m.milieu},${m.strate},${m.profondeur.toFixed(2)},${m.tEstimeeComplet.toFixed(2)},${m.tEstimeeSimple.toFixed(2)},${m.tMesuree.toFixed(2)}\n`;
+        csv += `${m.date},${m.lat},${m.lon},${m.milieu},${m.profondeurMax.toFixed(2)},${m.tEstimeeComplet.toFixed(2)},${m.tEstimeeSimple.toFixed(2)},${m.tMesureeSurface.toFixed(2)},${m.tMesureeProfondeur.toFixed(2)}\n`;
     });
     const blob = new Blob([csv], {type: 'text/csv'});
     const url = URL.createObjectURL(blob);
