@@ -5,7 +5,8 @@ const GAMMA_RIVIERE = 0.18;
 // === État global ===
 let currentLat = null;
 let currentLon = null;
-let currentTEauEstimee = null;
+let currentTEauComplet = null;
+let currentTEauSimple = null;
 
 // === Initialisation ===
 document.addEventListener('DOMContentLoaded', () => {
@@ -18,6 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('estimer').addEventListener('click', estimerTemperature);
     document.getElementById('enregistrer').addEventListener('click', enregistrerMesure);
     document.getElementById('export-csv').addEventListener('click', exporterCSV);
+    document.getElementById('strate').addEventListener('change', function() {
+        const choixProfondeur = document.getElementById('choix-profondeur');
+        choixProfondeur.style.display = this.value === 'profondeur' ? 'block' : 'none';
+    });
 });
 
 // === Géolocalisation ===
@@ -28,6 +33,7 @@ function getPosition() {
         coordsEl.textContent = 'Géolocalisation non supportée';
         return;
     }
+    const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
     navigator.geolocation.getCurrentPosition(async pos => {
         currentLat = pos.coords.latitude;
         currentLon = pos.coords.longitude;
@@ -40,7 +46,7 @@ function getPosition() {
         }
     }, err => {
         coordsEl.textContent = 'Erreur GPS : ' + err.message;
-    });
+    }, options);
 }
 
 // === Reverse geocoding (Nominatim) ===
@@ -78,8 +84,8 @@ async function fetchMeteoJour(lat, lon, dateStr) {
     return json.daily;
 }
 
-// === Estimation température de l'eau ===
-function estimerTemperatureRiviere(dates, tAir, wind) {
+// === Modèle complet (avec vent) ===
+function estimerTemperatureComplet(dates, tAir, wind) {
     const n = dates.length;
     if (n < 7) return tAir[n-1] || 15;
     const tEau = new Array(n);
@@ -92,6 +98,20 @@ function estimerTemperatureRiviere(dates, tAir, wind) {
     return tEau[n-1];
 }
 
+// === Modèle simplifié (sans vent) ===
+function estimerTemperatureSimple(dates, tAir) {
+    const n = dates.length;
+    if (n < 7) return tAir[n-1] || 15;
+    const tEau = new Array(n);
+    const sum7 = tAir.slice(0,7).reduce((a,b)=>a+b,0);
+    tEau[0] = sum7 / 7;
+    for (let i=1; i<n; i++) {
+        tEau[i] = ALPHA_RIVIERE * tEau[i-1] + (1 - ALPHA_RIVIERE) * tAir[i];
+    }
+    return tEau[n-1];
+}
+
+// === Estimation pour plan d'eau (moyenne 30 jours, commun aux deux modèles) ===
 function estimerTemperaturePlanEau(tAir) {
     if (tAir.length === 0) return 15;
     return tAir.reduce((a,b)=>a+b,0) / tAir.length;
@@ -110,7 +130,8 @@ async function estimerTemperature() {
     startDate.setDate(startDate.getDate() - 90);
     const startStr = startDate.toISOString().split('T')[0];
 
-    document.getElementById('t-estimee').textContent = 'Calcul en cours...';
+    document.getElementById('t-estimee-complet').textContent = 'Calcul en cours...';
+    document.getElementById('t-estimee-simple').textContent = '';
 
     try {
         const [archive, jour] = await Promise.all([
@@ -118,16 +139,21 @@ async function estimerTemperature() {
             fetchMeteoJour(currentLat, currentLon, dateStr)
         ]);
 
-        let tEau;
+        let tComplet, tSimple;
         if (milieu === 'riviere') {
-            tEau = estimerTemperatureRiviere(archive.time, archive.temperature_2m_mean, archive.wind_speed_10m_max);
+            tComplet = estimerTemperatureComplet(archive.time, archive.temperature_2m_mean, archive.wind_speed_10m_max);
+            tSimple = estimerTemperatureSimple(archive.time, archive.temperature_2m_mean);
         } else {
-            tEau = estimerTemperaturePlanEau(archive.temperature_2m_mean);
+            tComplet = estimerTemperaturePlanEau(archive.temperature_2m_mean);
+            tSimple = tComplet; // pour l'instant identique, à affiner plus tard
         }
-        currentTEauEstimee = tEau;
-        document.getElementById('t-estimee').textContent = `Température estimée : ${tEau.toFixed(1)} °C`;
+
+        currentTEauComplet = tComplet;
+        currentTEauSimple = tSimple;
+        document.getElementById('t-estimee-complet').textContent = `🌡️ Modèle complet : ${tComplet.toFixed(1)} °C`;
+        document.getElementById('t-estimee-simple').textContent = `📉 Modèle simplifié (sans vent) : ${tSimple.toFixed(1)} °C`;
     } catch (e) {
-        document.getElementById('t-estimee').textContent = 'Erreur lors de la récupération météo';
+        document.getElementById('t-estimee-complet').textContent = 'Erreur lors de la récupération météo';
         console.error(e);
     }
 }
@@ -135,16 +161,11 @@ async function estimerTemperature() {
 // === Enregistrement mesure ===
 function enregistrerMesure() {
     const tMesuree = parseFloat(document.getElementById('t-mesuree').value);
-    const profondeur = parseFloat(document.getElementById('profondeur').value);
     if (isNaN(tMesuree)) {
         document.getElementById('message').textContent = 'Veuillez entrer une température mesurée';
         return;
     }
-    if (isNaN(profondeur)) {
-        document.getElementById('message').textContent = 'Veuillez entrer la profondeur';
-        return;
-    }
-    if (currentTEauEstimee === null) {
+    if (currentTEauComplet === null) {
         document.getElementById('message').textContent = 'Veuillez d\'abord estimer la température';
         return;
     }
@@ -152,21 +173,30 @@ function enregistrerMesure() {
         document.getElementById('message').textContent = 'Position GPS non disponible';
         return;
     }
+
+    const strate = document.getElementById('strate').value;
+    let profondeur = 0.3; // surface par défaut
+    if (strate === 'profondeur') {
+        profondeur = parseFloat(document.getElementById('profondeur-max').value);
+    }
+
     const mesure = {
         date: new Date().toISOString(),
         lat: currentLat,
         lon: currentLon,
         milieu: document.getElementById('milieu').value,
-        tEstimee: currentTEauEstimee,
-        tMesuree: tMesuree,
-        profondeur: profondeur
+        strate: strate,
+        profondeur: profondeur,
+        tEstimeeComplet: currentTEauComplet,
+        tEstimeeSimple: currentTEauSimple,
+        tMesuree: tMesuree
     };
+
     const mesures = JSON.parse(localStorage.getItem('mesures') || '[]');
     mesures.push(mesure);
     localStorage.setItem('mesures', JSON.stringify(mesures));
     document.getElementById('message').textContent = '✅ Mesure enregistrée';
     document.getElementById('t-mesuree').value = '';
-    document.getElementById('profondeur').value = '';
     afficherHistorique();
 }
 
@@ -179,9 +209,12 @@ function afficherHistorique() {
         const li = document.createElement('li');
         const date = new Date(m.date).toLocaleString('fr-FR');
         const indexReel = mesures.length - 1 - i;
+        const ecartComplet = (m.tMesuree - m.tEstimeeComplet).toFixed(1);
+        const ecartSimple = (m.tMesuree - m.tEstimeeSimple).toFixed(1);
         li.innerHTML = `
-            ${date} - ${m.milieu} (${m.profondeur}m) : ${m.tEstimee.toFixed(1)}°C → ${m.tMesuree.toFixed(1)}°C 
-            (écart ${(m.tMesuree - m.tEstimee).toFixed(1)}°C)
+            ${date} - ${m.milieu} (${m.strate}, ${m.profondeur}m)<br>
+            Complet : ${m.tEstimeeComplet.toFixed(1)}°C → ${m.tMesuree.toFixed(1)}°C (écart ${ecartComplet}°C)<br>
+            Simplifié : ${m.tEstimeeSimple.toFixed(1)}°C → ${m.tMesuree.toFixed(1)}°C (écart ${ecartSimple}°C)
             <button class="btn-suppr" data-index="${indexReel}" title="Supprimer">❌</button>
         `;
         liste.appendChild(li);
@@ -210,9 +243,9 @@ function exporterCSV() {
         alert('Aucune mesure à exporter');
         return;
     }
-    let csv = 'date,latitude,longitude,milieu,profondeur_m,t_estimee,t_mesuree\n';
+    let csv = 'date,latitude,longitude,milieu,strate,profondeur_m,t_estimee_complet,t_estimee_simple,t_mesuree\n';
     mesures.forEach(m => {
-        csv += `${m.date},${m.lat},${m.lon},${m.milieu},${m.profondeur.toFixed(2)},${m.tEstimee.toFixed(2)},${m.tMesuree.toFixed(2)}\n`;
+        csv += `${m.date},${m.lat},${m.lon},${m.milieu},${m.strate},${m.profondeur.toFixed(2)},${m.tEstimeeComplet.toFixed(2)},${m.tEstimeeSimple.toFixed(2)},${m.tMesuree.toFixed(2)}\n`;
     });
     const blob = new Blob([csv], {type: 'text/csv'});
     const url = URL.createObjectURL(blob);
